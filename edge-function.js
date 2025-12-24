@@ -90,6 +90,8 @@ async function handleProxyRequest(request, url) {
       const contentType = headers.get('Content-Type') || ''
       if (contentType.includes('text/html')) {
         const html = await response.text()
+        const target = new URL(targetUrl)
+        const baseUrl = `${target.protocol}//${target.host}`
         const modifiedHtml = rewriteHtml(html, targetUrl, url.origin)
         
         // 注入脚本修复，确保页面中的 fetch 等 API 正常工作
