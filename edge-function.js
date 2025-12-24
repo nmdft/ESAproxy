@@ -7,9 +7,12 @@
  * 3. 返回目标网站的内容，并处理相对路径
  */
 
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request))
-})
+// ESA Pages 需要导出默认对象，包含 fetch 函数
+export default {
+  async fetch(request) {
+    return handleRequest(request);
+  }
+};
 
 async function handleRequest(request) {
   const url = new URL(request.url)
@@ -95,8 +98,8 @@ async function handleRequest(request) {
     }
   }
   
-  // 其他请求正常处理
-  return fetch(request)
+  // 其他请求正常处理（返回静态资源或 404）
+  return new Response('Not Found', { status: 404 })
 }
 
 /**
