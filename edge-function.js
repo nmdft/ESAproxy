@@ -7,24 +7,23 @@
  * 3. 返回目标网站的内容，并处理相对路径
  */
 
-// ESA Pages 需要导出默认对象，包含 fetch 函数
+// ESA Pages 需要导出默认对象，包含 fetch 或 bypass 函数
 export default {
-  async fetch(request) {
-    return handleRequest(request);
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    
+    // 只处理 /proxy 路径的请求，其他请求继续传递给源站
+    if (!url.pathname.startsWith('/proxy')) {
+      // 使用 env.ASSETS.fetch 获取静态资源
+      return env.ASSETS.fetch(request);
+    }
+    
+    return handleProxyRequest(request, url);
   }
 };
 
-async function handleRequest(request) {
-  const url = new URL(request.url)
-  
-  // 如果是根路径，返回主页
-  if (url.pathname === '/' || url.pathname === '') {
-    return fetch(request)
-  }
-  
-  // 处理代理请求
-  if (url.pathname.startsWith('/proxy')) {
-    const targetUrl = url.searchParams.get('url')
+async function handleProxyRequest(request, url) {
+  const targetUrl = url.searchParams.get('url')
     
     // 验证目标 URL
     if (!targetUrl) {
@@ -33,7 +32,7 @@ async function handleRequest(request) {
         headers: { 'Content-Type': 'text/plain; charset=utf-8' }
       })
     }
-    
+      
     try {
       // 验证 URL 格式
       const target = new URL(targetUrl)
@@ -91,15 +90,11 @@ async function handleRequest(request) {
       })
       
     } catch (error) {
-      return new Response(`代理请求失败: ${error.message}`, { 
-        status: 500,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-      })
-    }
+    return new Response(`代理请求失败: ${error.message}`, { 
+      status: 500,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+    })
   }
-  
-  // 其他请求正常处理（返回静态资源或 404）
-  return new Response('Not Found', { status: 404 })
 }
 
 /**
