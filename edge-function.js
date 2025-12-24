@@ -95,25 +95,62 @@ async function handleProxyRequest(request, url) {
         // 注入脚本修复，确保页面中的 fetch 等 API 正常工作
         const injectedScript = `
           <script>
-            // 确保 window.fetch 可用
-            if (typeof window.fetch === 'undefined') {
-              console.error('Fetch API not available');
-            }
-            
-            // 修复相对 URL 的表单提交
-            document.addEventListener('DOMContentLoaded', function() {
-              const forms = document.querySelectorAll('form');
-              forms.forEach(form => {
-                const originalAction = form.action;
-                if (originalAction && !originalAction.startsWith('javascript:') && !originalAction.startsWith('#')) {
-                  form.addEventListener('submit', function(e) {
-                    // 让表单提交通过代理
-                    const actionUrl = new URL(form.action || window.location.href);
-                    form.action = '${url.origin}/proxy?url=' + encodeURIComponent(actionUrl.href);
-                  });
+            // 拦截所有导航，将相对路径和绝对路径都通过代理
+            (function() {
+              const proxyOrigin = '${url.origin}';
+              const targetOrigin = '${baseUrl}';
+              
+              // 拦截 History API
+              const originalPushState = history.pushState;
+              const originalReplaceState = history.replaceState;
+              
+              history.pushState = function() {
+                const result = originalPushState.apply(this, arguments);
+                // 阻止实际的导航
+                return result;
+              };
+              
+              history.replaceState = function() {
+                const result = originalReplaceState.apply(this, arguments);
+                // 阻止实际的导航
+                return result;
+              };
+              
+              // 拦截链接点击
+              document.addEventListener('click', function(e) {
+                const link = e.target.closest('a');
+                if (link && link.href) {
+                  const href = link.href;
+                  // 如果是指向原始域名的链接，转换为代理链接
+                  if (href.startsWith(targetOrigin)) {
+                    e.preventDefault();
+                    window.location.href = proxyOrigin + '/proxy?url=' + encodeURIComponent(href);
+                  } else if (!href.startsWith(proxyOrigin) && !href.startsWith('javascript:') && !href.startsWith('#') && !href.startsWith('mailto:')) {
+                    // 其他外部链接也通过代理
+                    if (href.startsWith('http://') || href.startsWith('https://')) {
+                      e.preventDefault();
+                      window.location.href = proxyOrigin + '/proxy?url=' + encodeURIComponent(href);
+                    }
+                  }
                 }
-              });
-            });
+              }, true);
+              
+              // 修复表单提交
+              document.addEventListener('submit', function(e) {
+                const form = e.target;
+                if (form.action) {
+                  const action = form.action;
+                  if (action.startsWith(targetOrigin) || (action.startsWith('/') && !action.startsWith('/proxy'))) {
+                    e.preventDefault();
+                    const fullAction = action.startsWith('/') ? targetOrigin + action : action;
+                    const formData = new FormData(form);
+                    const params = new URLSearchParams(formData);
+                    const targetUrl = fullAction + (fullAction.includes('?') ? '&' : '?') + params.toString();
+                    window.location.href = proxyOrigin + '/proxy?url=' + encodeURIComponent(targetUrl);
+                  }
+                }
+              }, true);
+            })();
           </script>
         `;
         
@@ -204,55 +241,73 @@ function rewriteHtml(html, targetUrl, proxyOrigin) {
   // 替换相对路径的资源链接
   let modified = html
   
-  // 处理 <base> 标签 - 不使用代理，保持原始域名
-  // 这样可以让页面内的相对链接正常工作
-  if (!modified.includes('<base')) {
-    modified = modified.replace(/<head[^>]*>/i, (match) => {
-      return `${match}<base href="${baseUrl}/">`
-    })
-  }
+  // 不添加 <base> 标签，以免导致跳转问题
+  // 而是通过 JavaScript 拦截所有导航
   
-  // 处理 src 属性（img, script, iframe 等）- 只处理绝对URL
+  // 处理 src 属性（img, script, iframe 等）
   modified = modified.replace(/(<(?:img|script|iframe|embed|audio|video|source)\s+[^>]*src=["'])([^"']+)(["'])/gi, 
     (match, before, src, after) => {
       // 跳过已经是代理链接的
       if (src.includes('/proxy?url=')) {
         return match
       }
-      // 跳过 data: 和相对路径
-      if (src.startsWith('data:') || src.startsWith('//') || src.startsWith('/') || !src.includes('://')) {
+      // 跳过 data: 协议
+      if (src.startsWith('data:')) {
         return match
       }
-      // 只代理完整的 http/https URL
+      
+      // 处理完整 URL
       if (src.startsWith('http://') || src.startsWith('https://')) {
         return `${before}${proxyOrigin}/proxy?url=${encodeURIComponent(src)}${after}`
       }
-      return match
-    })
-  
-  // 处理 href 属性（a, link）- 更保守的处理
-  modified = modified.replace(/(<(?:a|link)\s+[^>]*href=["'])([^"']+)(["'])/gi, 
-    (match, before, href, after) => {
-      // 跳过特殊协议和锚点
-      if (href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+      
+      // 处理相对路径
+      if (src.startsWith('//')) {
+        return `${before}${proxyOrigin}/proxy?url=${encodeURIComponent('https:' + src)}${after}`
+      }
+      
+      if (src.startsWith('/')) {
+        return `${before}${proxyOrigin}/proxy?url=${encodeURIComponent(baseUrl + src)}${after}`
+      }
+      
+      // 其他相对路径
+      try {
+        const absoluteUrl = new URL(src, baseUrl).href
+        return `${before}${proxyOrigin}/proxy?url=${encodeURIComponent(absoluteUrl)}${after}`
+      } catch {
         return match
       }
+    })
+  
+  // 处理 href 属性（link 标签用于 CSS）- 不处理 a 标签，由 JS 拦截
+  modified = modified.replace(/(<link\s+[^>]*href=["'])([^"']+)(["'])/gi, 
+    (match, before, href, after) => {
       // 跳过已经是代理链接的
       if (href.includes('/proxy?url=')) {
         return match
       }
-      // 跳过相对路径 - 让 base 标签处理
-      if (href.startsWith('/') || !href.includes('://')) {
-        return match
-      }
-      // 只代理完整的 http/https URL
+      
+      // 处理完整 URL
       if (href.startsWith('http://') || href.startsWith('https://')) {
         return `${before}${proxyOrigin}/proxy?url=${encodeURIComponent(href)}${after}`
       }
-      return match
+      
+      // 处理相对路径
+      if (href.startsWith('//')) {
+        return `${before}${proxyOrigin}/proxy?url=${encodeURIComponent('https:' + href)}${after}`
+      }
+      
+      if (href.startsWith('/')) {
+        return `${before}${proxyOrigin}/proxy?url=${encodeURIComponent(baseUrl + href)}${after}`
+      }
+      
+      try {
+        const absoluteUrl = new URL(href, baseUrl).href
+        return `${before}${proxyOrigin}/proxy?url=${encodeURIComponent(absoluteUrl)}${after}`
+      } catch {
+        return match
+      }
     })
-  
-  // 不处理 CSS url() - 可能会破坏样式
   
   return modified
 }
