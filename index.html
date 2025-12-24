@@ -144,6 +144,14 @@
             to { transform: rotate(360deg); }
         }
 
+        .quick-search {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            border: 2px dashed #667eea;
+        }
+        
         .loading::before {
             content: '';
             display: inline-block;
@@ -163,24 +171,50 @@
         <h1>🌐 ESA 反向代理</h1>
         <p class="subtitle">通过阿里云边缘安全加速访问任意网站</p>
         
-        <form id="proxyForm">
-            <div class="input-group">
-                <label for="targetUrl">目标网址</label>
-                <input 
-                    type="url" 
-                    id="targetUrl" 
-                    name="targetUrl" 
-                    placeholder="https://example.com" 
-                    required
-                />
-                <div class="error" id="errorMsg">请输入有效的 URL</div>
-            </div>
+        <!-- Google 快速搜索 -->
+        <div class="quick-search">
+            <h2 style="font-size: 20px; color: #333; margin-bottom: 15px;">🔍 快速 Google 搜索</h2>
+            <form id="googleSearchForm">
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="searchQuery" 
+                        name="searchQuery" 
+                        placeholder="输入搜索内容..." 
+                        style="margin-bottom: 10px;"
+                    />
+                    <div class="button-group">
+                        <button type="submit" class="btn-primary">Google 搜索</button>
+                        <button type="button" class="btn-secondary" onclick="clearSearch()">清空</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        
+        <div style="text-align: center; margin: 20px 0; color: #999;">或</div>
+        
+        <!-- 访问任意网址 -->
+        <div>
+            <h2 style="font-size: 20px; color: #333; margin-bottom: 15px;">🌍 访问任意网址</h2>
+            <form id="proxyForm">
+                <div class="input-group">
+                    <label for="targetUrl">目标网址</label>
+                    <input 
+                        type="url" 
+                        id="targetUrl" 
+                        name="targetUrl" 
+                        placeholder="https://example.com" 
+                        required
+                    />
+                    <div class="error" id="errorMsg">请输入有效的 URL</div>
+                </div>
 
-            <div class="button-group">
-                <button type="submit" class="btn-primary">访问</button>
-                <button type="button" class="btn-secondary" onclick="clearInput()">清空</button>
-            </div>
-        </form>
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">访问</button>
+                    <button type="button" class="btn-secondary" onclick="clearInput()">清空</button>
+                </div>
+            </form>
+        </div>
 
         <div class="loading" id="loading">正在跳转...</div>
 
@@ -191,6 +225,13 @@
                 <li>支持访问任何可访问的网站</li>
                 <li>通过 ESA 边缘节点加速访问</li>
                 <li>保护隐私，隐藏真实访问来源</li>
+            </ul>
+            
+            <h3 style="margin-top: 20px;">⚠️ 重要提示</h3>
+            <ul>
+                <li><strong>网络限制</strong>：某些网站（如 Google、Twitter 等）可能在国内 ESA 节点无法访问</li>
+                <li><strong>访问来源</strong>：代理请求从 ESA 边缘节点发起，不是从你的本地网络</li>
+                <li><strong>建议测试</strong>：百度、淘宝等国内网站通常可以正常访问</li>
             </ul>
         </div>
     </div>
@@ -211,6 +252,34 @@
             }
         }
 
+        // Google 搜索表单处理
+        const googleSearchForm = document.getElementById('googleSearchForm');
+        const searchQuery = document.getElementById('searchQuery');
+        
+        googleSearchForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const query = searchQuery.value.trim();
+            
+            if (!query) {
+                alert('请输入搜索内容');
+                return;
+            }
+            
+            // 构建 Google 搜索 URL
+            const googleSearchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(query);
+            
+            // 通过代理访问
+            loading.style.display = 'block';
+            window.location.href = '/proxy?url=' + encodeURIComponent(googleSearchUrl);
+        });
+        
+        // 清空搜索
+        function clearSearch() {
+            searchQuery.value = '';
+            searchQuery.focus();
+        }
+        
         // 表单提交处理
         form.addEventListener('submit', function(e) {
             e.preventDefault();
